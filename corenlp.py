@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#coding:utf-8
 #
 # corenlp  - Python interface to Stanford Core NLP tools
 # Copyright (c) 2014 Dustin Smith
@@ -24,6 +25,9 @@ import os, re, sys, time, traceback
 import jsonrpc, pexpect
 from progressbar import ProgressBar, Fraction
 import logging
+
+reload(sys)
+sys.setdefaultencoding('utf8')
 
 
 VERBOSE = True
@@ -70,8 +74,11 @@ def parse_parser_results(text):
     and then returns a Python list of dictionaries, one for each parsed
     sentence.
     """
+    print text
     results = {"sentences": []}
     state = STATE_START
+    #Guan 20170426
+    #text = unicode(text,'utf-8')
     for line in text.encode('utf-8').split("\n"):
         line = line.strip()
         
@@ -132,8 +139,11 @@ class StanfordCoreNLP(object):
         Checks the location of the jar files.
         Spawns the server as a process.
         """
-        jars = ["stanford-corenlp-3.4.1.jar",
-                "stanford-corenlp-3.4.1-models.jar",
+        jars = ["stanford-corenlp-2017-04-14-build.jar",
+                "stanford-corenlp-models-current.jar",
+                "stanford-chinese-corenlp-models-current.jar",
+                #"stanford-english-corenlp-models-current.jar",
+                #"stanford-english-kbp-corenlp-models-current.jar",
                 "joda-time.jar",
                 "xom.jar",
                 "jollyday.jar"]
@@ -141,13 +151,14 @@ class StanfordCoreNLP(object):
         # if CoreNLP libraries are in a different directory,
         # change the corenlp_path variable to point to them
         if not corenlp_path:
-            corenlp_path = "./stanford-corenlp-full-2014-08-27/"
+            corenlp_path = "./CoreNLP/"
         
         java_path = "java"
         classname = "edu.stanford.nlp.pipeline.StanfordCoreNLP"
         # include the properties file, so you can change defaults
         # but any changes in output format will break parse_parser_results()
-        props = "-props default.properties" 
+        #props = "-props default.properties" 
+        props = "-props StanfordCoreNLP-chinese.properties"
         
         # add and check classpaths
         jars = [corenlp_path + jar for jar in jars]
@@ -157,25 +168,26 @@ class StanfordCoreNLP(object):
                 sys.exit(1)
         
         # spawn the server
-        start_corenlp = "%s -Xmx1800m -cp %s %s %s" % (java_path, ':'.join(jars), classname, props)
+        start_corenlp = "%s -Xmx5g -cp %s %s %s" % (java_path, ':'.join(jars), classname, props)
+        #start_corenlp = 'java -Xmx100g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer  -serverProperties StanfordCoreNL-chinese.properties -port 14444 -timeout 100000'
         if VERBOSE: 
             logger.debug(start_corenlp)
-        self.corenlp = pexpect.spawn(start_corenlp)
+        self.corenlp = pexpect.spawnu(start_corenlp)
         
         # show progress bar while loading the models
         widgets = ['Loading Models: ', Fraction()]
-        pbar = ProgressBar(widgets=widgets, maxval=5, force_update=True).start()
-        self.corenlp.expect("done.", timeout=20) # Load pos tagger model (~5sec)
+        pbar = ProgressBar(widgets=widgets, maxval=4, force_update=True).start()
+        self.corenlp.expect([u"done.", pexpect.EOF], timeout=200) # Load pos tagger model (~5sec)
         pbar.update(1)
-        self.corenlp.expect("done.", timeout=200) # Load NER-all classifier (~33sec)
+        self.corenlp.expect([u"done.", pexpect.EOF], timeout=2000) # Load NER-all classifier (~33sec)
         pbar.update(2)
-        self.corenlp.expect("done.", timeout=600) # Load NER-muc classifier (~60sec)
+        self.corenlp.expect([u"done.", pexpect.EOF], timeout=6000) # Load NER-muc classifier (~60sec)
         pbar.update(3)
-        self.corenlp.expect("done.", timeout=600) # Load CoNLL classifier (~50sec)
+        self.corenlp.expect([u"done.", pexpect.EOF], timeout=6000) # Load CoNLL classifier (~50sec)
         pbar.update(4)
-        self.corenlp.expect("done.", timeout=200) # Loading PCFG (~3sec)
-        pbar.update(5)
-        self.corenlp.expect("Entering interactive shell.")
+        #self.corenlp.expect([u"done.", pexpect.EOF], timeout=2000) # Loading PCFG (~3sec)
+        #pbar.update(5)
+        self.corenlp.expect([u"Entering interactive shell.", pexpect.EOF])
         pbar.finish()
     
     def _parse(self, text):
@@ -236,6 +248,7 @@ class StanfordCoreNLP(object):
         reads in the result, parses the results and returns a list
         with one dictionary entry for each parsed sentence, in JSON format.
         """
+        
         response = self._parse(text)
         logger.debug("Response: '%s'" % (response))
         return json.dumps(response)
@@ -246,8 +259,8 @@ if __name__ == '__main__':
     The code below starts an JSONRPC server
     """
     parser = optparse.OptionParser(usage="%prog [OPTIONS]")
-    parser.add_option('-p', '--port', default='8080',
-                      help='Port to serve on (default: 8080)')
+    parser.add_option('-p', '--port', default='14444',
+                      help='Port to serve on (default: 14444)')
     parser.add_option('-H', '--host', default='127.0.0.1',
                       help='Host to serve on (default: 127.0.0.1. Use 0.0.0.0 to make public)')
     options, args = parser.parse_args()
